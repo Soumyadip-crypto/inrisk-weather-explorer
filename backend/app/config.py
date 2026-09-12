@@ -11,7 +11,7 @@ class Settings(BaseSettings):
 
     aws_access_key_id: str | None = None
     aws_secret_access_key: str | None = None
-
+    aws_session_token: str | None = None
     cors_origins: str = "http://localhost:5173"
 
     open_meteo_base_url: str = (
@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     )
 
     request_timeout_seconds: float = 20.0
+
+    # Local development = "/"
+    # AWS API Gateway stage = "/default"
+    api_gateway_base_path: str = "/"
 
     model_config = SettingsConfigDict(
         env_file=".env",

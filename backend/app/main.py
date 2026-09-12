@@ -87,4 +87,7 @@ app.include_router(router)
 
 
 # AWS Lambda entry point
-handler = Mangum(app)
+handler = Mangum(
+    app,
+    api_gateway_base_path=settings.api_gateway_base_path,
+)

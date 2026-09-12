@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
@@ -9,6 +10,9 @@ from botocore.exceptions import (
 )
 
 from app.config import Settings
+
+
+logger = logging.getLogger(__name__)
 
 
 class StorageError(RuntimeError):
@@ -73,8 +77,7 @@ class S3StorageService:
         }
 
         # Local development can use IAM access keys.
-        # In production, no keys are required here if
-        # the service runs with an IAM role.
+        # In production Lambda uses its execution role.
         if (
             settings.aws_access_key_id
             and settings.aws_secret_access_key
@@ -86,7 +89,10 @@ class S3StorageService:
             client_options[
                 "aws_secret_access_key"
             ] = settings.aws_secret_access_key
-
+            if settings.aws_session_token:
+                client_options[
+                    "aws_session_token"
+                ] = settings.aws_session_token
         self.client = boto3.client(
             "s3",
             **client_options,
@@ -110,6 +116,12 @@ class S3StorageService:
             ClientError,
             BotoCoreError,
         ) as exc:
+
+            logger.exception(
+                "Unable to store weather data "
+                "in S3 bucket: %s",
+                self.bucket_name,
+            )
 
             raise StorageError(
                 "Unable to store weather data "
@@ -179,6 +191,12 @@ class S3StorageService:
             BotoCoreError,
         ) as exc:
 
+            logger.exception(
+                "Unable to list weather files "
+                "from S3 bucket: %s",
+                self.bucket_name,
+            )
+
             raise StorageError(
                 "Unable to list weather files"
             ) from exc
@@ -233,11 +251,24 @@ class S3StorageService:
                     "not found"
                 ) from exc
 
+            logger.exception(
+                "Unable to read weather file "
+                "%s from S3 bucket: %s",
+                file_name,
+                self.bucket_name,
+            )
+
             raise StorageError(
                 "Unable to read weather file"
             ) from exc
 
         except json.JSONDecodeError as exc:
+
+            logger.exception(
+                "Stored weather file contains "
+                "invalid JSON: %s",
+                file_name,
+            )
 
             raise StorageError(
                 "Stored weather file "
@@ -245,6 +276,13 @@ class S3StorageService:
             ) from exc
 
         except BotoCoreError as exc:
+
+            logger.exception(
+                "Unable to read weather file "
+                "%s from S3 bucket: %s",
+                file_name,
+                self.bucket_name,
+            )
 
             raise StorageError(
                 "Unable to read weather file"
