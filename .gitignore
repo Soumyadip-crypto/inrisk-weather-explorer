@@ -42,3 +42,6 @@ frontend/.env
 # OS files
 .DS_Store
 Thumbs.db
+# AWS Lambda deployment artifacts
+backend/lambda_package/
+backend/lambda_deployment.zip

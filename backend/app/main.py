@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from mangum import Mangum
 
 from app.api.routes import router
 from app.config import get_settings
@@ -15,7 +16,7 @@ app = FastAPI(
     version="1.0.0",
     description=(
         "Fetch historical weather data, "
-        "store raw JSON in Google Cloud Storage, "
+        "store raw JSON in Amazon S3, "
         "and visualize stored datasets."
     ),
 )
@@ -39,11 +40,9 @@ async def validation_exception_handler(
     request: Request,
     exc: RequestValidationError,
 ):
-
     errors = []
 
     for error in exc.errors():
-
         location = ".".join(
             str(part)
             for part in error.get("loc", [])
@@ -75,7 +74,6 @@ async def unexpected_exception_handler(
     request: Request,
     exc: Exception,
 ):
-
     return JSONResponse(
         status_code=500,
         content={
@@ -86,3 +84,7 @@ async def unexpected_exception_handler(
 
 
 app.include_router(router)
+
+
+# AWS Lambda entry point
+handler = Mangum(app)
