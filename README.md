@@ -1,26 +1,36 @@
 # Weather Explorer
 
-A full-stack weather data application built for the InRisk Labs case study.
+A full-stack historical weather data application built for the InRisk Labs Full Stack Engineer case study.
 
-The application allows users to fetch historical weather data for a geographic location and date range, store the raw Open-Meteo response in Amazon S3, browse previously stored datasets, and visualize the stored data using charts and a paginated table.
+Weather Explorer allows users to enter a geographic location and historical date range, fetch weather data from Open-Meteo, store the original JSON response in Amazon S3, browse previously stored datasets, and visualize the stored data using charts and a paginated table.
+
+## Live Demo
+
+- **Frontend:** https://inrisk-weather-explorer-gules.vercel.app
+- **Backend API:** https://ve1mksac44.execute-api.ap-south-1.amazonaws.com/default
+- **GitHub Repository:** https://github.com/Soumyadip-crypto/inrisk-weather-explorer
 
 ---
 
 ## Features
 
 - Fetch historical weather data using latitude and longitude
-- Select a custom date range of up to 31 days
+- Select a historical date range of up to 31 inclusive days
 - Frontend and backend input validation
 - Historical weather data powered by Open-Meteo
-- Raw API responses stored in Amazon S3
-- Browse previously stored weather files
-- Load data directly from stored cloud JSON
+- Raw API responses stored in private Amazon S3 object storage
+- Browse previously stored weather datasets
+- Read stored JSON instead of repeatedly calling Open-Meteo
 - Maximum and minimum temperature line chart
 - Daily weather data table
+- Apparent maximum and minimum temperature display
 - Pagination with 10, 20, or 50 rows per page
-- Client-side caching to avoid unnecessary repeated API calls
+- Client-side caching for previously opened files
 - Loading, success, empty, and error states
-- Responsive UI
+- Responsive interface
+- Serverless backend deployed on AWS Lambda
+- Public HTTPS API through Amazon API Gateway
+- Production frontend hosted on Vercel
 
 ---
 
@@ -33,6 +43,7 @@ The application allows users to fetch historical weather data for a geographic l
 - Tailwind CSS
 - Recharts
 - JavaScript
+- Fetch API
 
 ### Backend
 
@@ -41,10 +52,18 @@ The application allows users to fetch historical weather data for a geographic l
 - Pydantic
 - HTTPX
 - Boto3
+- Mangum
 
-### Cloud / External Services
+### Cloud & Deployment
 
+- AWS Lambda
+- Amazon API Gateway
 - Amazon S3
+- AWS IAM
+- Vercel
+
+### External Service
+
 - Open-Meteo Historical Weather API
 
 ### Testing
@@ -54,33 +73,78 @@ The application allows users to fetch historical weather data for a geographic l
 
 ---
 
-## Architecture
+## Production Architecture
 
 ```text
-                         ┌──────────────────────┐
-                         │      React UI        │
-                         │ Vite + Tailwind CSS  │
-                         │      Recharts        │
-                         └──────────┬───────────┘
-                                    │
-                                    │ REST API
-                                    ▼
-                         ┌──────────────────────┐
-                         │    FastAPI Backend   │
-                         └───────┬───────┬──────┘
-                                 │       │
-                    Fetch data   │       │ Store / Read
-                                 │       │
-                                 ▼       ▼
-                     ┌──────────────┐  ┌──────────────┐
-                     │  Open-Meteo  │  │  Amazon S3   │
-                     │ Archive API  │  │Object Storage│
-                     └──────────────┘  └──────────────┘
+                       User
+                         │
+                         ▼
+                React / Vite Frontend
+                         │
+                       Vercel
+                         │
+                      HTTPS
+                         ▼
+                Amazon API Gateway
+                         │
+                         ▼
+                   AWS Lambda
+                         │
+                      Mangum
+                         │
+                         ▼
+                      FastAPI
+                      /     \
+                     /       \
+                    ▼         ▼
+             Open-Meteo    Amazon S3
+              Archive       Private
+                API       Object Storage
 ```
 
-The backend fetches historical weather information from Open-Meteo and preserves the raw JSON response in Amazon S3.
+The React frontend is deployed on Vercel.
 
-Charts and tables are rendered from the stored S3 JSON instead of repeatedly calling Open-Meteo.
+Requests are sent to Amazon API Gateway, which invokes the FastAPI application running inside AWS Lambda. Mangum acts as the adapter between Lambda/API Gateway events and the FastAPI ASGI application.
+
+For new weather requests, FastAPI calls Open-Meteo and stores the original JSON response in Amazon S3.
+
+When a stored dataset is selected, the application reads the JSON from S3 and uses it to render charts and tables without calling Open-Meteo again.
+
+---
+
+## Application Data Flow
+
+```text
+User enters latitude, longitude and date range
+                    ↓
+React validates the input
+                    ↓
+POST /store-weather-data
+                    ↓
+Amazon API Gateway
+                    ↓
+AWS Lambda
+                    ↓
+Mangum
+                    ↓
+FastAPI validates the request
+                    ↓
+Open-Meteo historical API
+                    ↓
+Raw JSON response
+                    ↓
+Amazon S3
+                    ↓
+Backend returns generated filename
+                    ↓
+Frontend refreshes stored file list
+                    ↓
+Selected JSON is read from S3
+                    ↓
+React transforms daily data
+                    ↓
+Recharts + Paginated Table
+```
 
 ---
 
@@ -114,8 +178,8 @@ Example request:
 {
   "latitude": 22.5726,
   "longitude": 88.3639,
-  "start_date": "2026-07-01",
-  "end_date": "2026-07-31"
+  "start_date": "2026-08-20",
+  "end_date": "2026-08-24"
 }
 ```
 
@@ -124,9 +188,17 @@ Example response:
 ```json
 {
   "status": "ok",
-  "file": "weather_22.5726_88.3639_2026-07-01_2026-07-31_<timestamp>.json"
+  "file": "weather_22.5726_88.3639_2026-08-20_2026-08-24_<timestamp>.json"
 }
 ```
+
+This endpoint:
+
+1. Validates the input
+2. Fetches historical weather data from Open-Meteo
+3. Generates a unique filename
+4. Stores the raw JSON response in Amazon S3
+5. Returns the stored filename
 
 ---
 
@@ -142,13 +214,15 @@ Example response:
 {
   "files": [
     {
-      "name": "weather_22.5726_88.3639_2026-07-01_2026-07-31_<timestamp>.json",
-      "size": 1400,
-      "created_at": "2026-09-12T17:31:26+00:00"
+      "name": "weather_22.5726_88.3639_2026-08-20_2026-08-24_<timestamp>.json",
+      "size": 609,
+      "created_at": "2026-09-12T21:26:28+00:00"
     }
   ]
 }
 ```
+
+The backend uses the Amazon S3 paginator when listing stored objects.
 
 ---
 
@@ -160,7 +234,7 @@ GET /weather-file-content/{file_name}
 
 Returns the original weather JSON stored in Amazon S3.
 
-If the object does not exist:
+If the object cannot be found:
 
 ```json
 {
@@ -173,7 +247,7 @@ If the object does not exist:
 
 ## Validation
 
-The application validates requests on both the frontend and backend.
+Validation is implemented on both the frontend and backend.
 
 Rules:
 
@@ -183,26 +257,30 @@ Rules:
 - Start date must be before or equal to end date
 - Date ranges cannot exceed 31 inclusive days
 
-Backend validation prevents invalid requests even if frontend validation is bypassed.
+Frontend validation provides immediate feedback to the user.
+
+Backend validation remains the source of truth and protects the API even when frontend validation is bypassed.
 
 ---
 
 ## Weather Data
 
-The following daily Open-Meteo fields are requested:
+The application requests the following daily Open-Meteo fields:
 
 - `temperature_2m_max`
 - `temperature_2m_min`
 - `apparent_temperature_max`
 - `apparent_temperature_min`
 
-The raw Open-Meteo JSON response is stored without transforming the stored representation.
+The original Open-Meteo JSON response is stored directly in Amazon S3.
+
+This keeps the persisted dataset faithful to the upstream API response and allows the stored data to be reused later without another Open-Meteo request.
 
 ---
 
 ## S3 File Naming
 
-Stored objects use the following convention:
+Stored objects follow this format:
 
 ```text
 weather_<latitude>_<longitude>_<start_date>_<end_date>_<timestamp>.json
@@ -211,10 +289,10 @@ weather_<latitude>_<longitude>_<start_date>_<end_date>_<timestamp>.json
 Example:
 
 ```text
-weather_22.5726_88.3639_2026-07-01_2026-07-31_20260912T173125686909Z.json
+weather_22.5726_88.3639_2026-08-20_2026-08-24_20260912T212627683943Z.json
 ```
 
-A UTC timestamp makes each object name unique.
+A UTC timestamp is included to prevent different requests for the same location and date range from overwriting each other.
 
 ---
 
@@ -222,16 +300,26 @@ A UTC timestamp makes each object name unique.
 
 ```text
 inrisk-weather-explorer/
+│
 ├── backend/
 │   ├── app/
 │   │   ├── api/
+│   │   │   └── routes.py
 │   │   ├── services/
+│   │   │   ├── open_meteo.py
+│   │   │   └── storage.py
+│   │   ├── __init__.py
 │   │   ├── config.py
 │   │   ├── dependencies.py
 │   │   ├── main.py
 │   │   └── models.py
+│   │
 │   ├── tests/
+│   │   ├── test_api.py
+│   │   └── test_models.py
+│   │
 │   ├── .env.example
+│   ├── .dockerignore
 │   ├── Dockerfile
 │   ├── pytest.ini
 │   ├── requirements.txt
@@ -240,12 +328,20 @@ inrisk-weather-explorer/
 ├── frontend/
 │   ├── src/
 │   │   ├── api/
+│   │   │   └── weatherApi.js
 │   │   ├── components/
+│   │   │   ├── StoredFiles.jsx
+│   │   │   ├── TemperatureChart.jsx
+│   │   │   ├── WeatherForm.jsx
+│   │   │   └── WeatherTable.jsx
 │   │   ├── utils/
+│   │   │   └── weather.js
 │   │   ├── App.jsx
 │   │   ├── index.css
 │   │   └── main.jsx
+│   │
 │   ├── package.json
+│   ├── package-lock.json
 │   └── vite.config.js
 │
 ├── .gitignore
@@ -256,16 +352,16 @@ inrisk-weather-explorer/
 
 ## Local Development
 
-## 1. Clone the Repository
+### 1. Clone the Repository
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/Soumyadip-crypto/inrisk-weather-explorer.git
 cd inrisk-weather-explorer
 ```
 
 ---
 
-## 2. Backend Setup
+## Backend Setup
 
 Move into the backend directory:
 
@@ -279,9 +375,9 @@ Create a virtual environment:
 python -m venv venv
 ```
 
-Activate the virtual environment.
-
 ### Windows PowerShell
+
+Activate it:
 
 ```powershell
 venv\Scripts\Activate.ps1
@@ -293,7 +389,11 @@ Install dependencies:
 pip install -r requirements-dev.txt
 ```
 
-Create a `.env` file inside the `backend` directory.
+Create:
+
+```text
+backend/.env
+```
 
 Example:
 
@@ -305,6 +405,7 @@ AWS_SECRET_ACCESS_KEY=your-secret-access-key
 CORS_ORIGINS=http://localhost:5173
 OPEN_METEO_BASE_URL=https://archive-api.open-meteo.com/v1/archive
 REQUEST_TIMEOUT_SECONDS=20
+API_GATEWAY_BASE_PATH=/
 ```
 
 Run the backend:
@@ -313,7 +414,7 @@ Run the backend:
 python -m uvicorn app.main:app --reload
 ```
 
-Backend URL:
+Local backend:
 
 ```text
 http://127.0.0.1:8000
@@ -325,7 +426,7 @@ Swagger documentation:
 http://127.0.0.1:8000/docs
 ```
 
-Health endpoint:
+Health check:
 
 ```text
 http://127.0.0.1:8000/health
@@ -333,9 +434,9 @@ http://127.0.0.1:8000/health
 
 ---
 
-## 3. Frontend Setup
+## Frontend Setup
 
-Open another terminal and move into the frontend directory:
+Open another terminal:
 
 ```bash
 cd frontend
@@ -347,7 +448,11 @@ Install dependencies:
 npm install
 ```
 
-Create a `.env` file inside the `frontend` directory.
+Create:
+
+```text
+frontend/.env
+```
 
 Add:
 
@@ -355,13 +460,13 @@ Add:
 VITE_API_BASE_URL=http://localhost:8000
 ```
 
-Run the frontend:
+Run:
 
 ```bash
 npm run dev
 ```
 
-Frontend URL:
+Frontend:
 
 ```text
 http://localhost:5173
@@ -369,15 +474,9 @@ http://localhost:5173
 
 ---
 
-## Running Tests
+## Running Backend Tests
 
-Move into the backend directory:
-
-```bash
-cd backend
-```
-
-Run:
+From the backend directory:
 
 ```bash
 python -m pytest
@@ -395,13 +494,7 @@ The test suite covers API behavior and request-model validation.
 
 ## Frontend Quality Checks
 
-Move into the frontend directory:
-
-```bash
-cd frontend
-```
-
-Run ESLint:
+From the frontend directory:
 
 ```bash
 npm run lint
@@ -413,35 +506,70 @@ Create a production build:
 npm run build
 ```
 
-The project currently passes ESLint and creates a successful Vite production build.
+The project passes ESLint and successfully creates a Vite production build.
 
 ---
 
-## Data Flow
+## Frontend Components
 
-The main application flow is:
+### WeatherForm
+
+Handles:
+
+- Latitude input
+- Longitude input
+- Start date
+- End date
+- Client-side validation
+- Submit state
+- Success and validation messages
+
+### StoredFiles
+
+Displays stored S3 datasets and allows users to load an existing weather file.
+
+The **Browse Files** button refreshes the S3 file list through:
+
+```http
+GET /list-weather-files
+```
+
+### TemperatureChart
+
+Uses Recharts to display:
+
+- Maximum daily temperature
+- Minimum daily temperature
+
+### WeatherTable
+
+Displays:
+
+- Date
+- Maximum temperature
+- Minimum temperature
+- Apparent maximum temperature
+- Apparent minimum temperature
+
+Pagination supports:
 
 ```text
-User enters coordinates and date range
-            ↓
-React frontend validates the input
-            ↓
-POST /store-weather-data
-            ↓
-FastAPI validates the request
-            ↓
-FastAPI calls Open-Meteo
-            ↓
-Raw Open-Meteo JSON is stored in Amazon S3
-            ↓
-Backend returns the generated file name
-            ↓
-Frontend refreshes the stored file list
-            ↓
-Frontend loads the stored S3 JSON
-            ↓
-Chart and table are rendered
+10
+20
+50
 ```
+
+rows per page.
+
+---
+
+## Client-Side Caching
+
+Previously opened weather files are stored in an in-memory JavaScript `Map`.
+
+If a user opens the same stored file again, the frontend reuses the cached response rather than making another backend request.
+
+This reduces unnecessary API calls.
 
 ---
 
@@ -453,57 +581,59 @@ The application handles:
 - Invalid longitude
 - Missing dates
 - Start date greater than end date
-- Date ranges greater than 31 days
+- Date ranges longer than 31 days
 - Open-Meteo request failures
 - S3 upload failures
 - S3 list failures
 - Missing stored files
 - Invalid stored JSON
-- Frontend API failures
-
-The UI provides visible error, loading, empty, and success states.
-
----
-
-## Performance
-
-The frontend keeps previously loaded weather files in an in-memory cache using a JavaScript `Map`.
-
-If the user opens the same stored file again, the application can reuse the cached data instead of making another backend request.
-
-This helps avoid unnecessary API calls.
+- API request failures
+- Loading states
+- Empty states
 
 ---
 
-## Security
+## AWS Architecture
 
-Environment files are excluded from source control.
+### AWS Lambda
 
-The following files and directories are ignored:
+The FastAPI backend runs serverlessly inside AWS Lambda.
+
+Mangum converts API Gateway events into ASGI requests that FastAPI can process.
+
+Lambda handler:
 
 ```text
-backend/.env
-frontend/.env
-backend/venv/
-frontend/node_modules/
-frontend/dist/
+app.main.handler
 ```
 
-AWS credentials must never be committed to Git.
+### Amazon API Gateway
 
-For local development, credentials can be supplied through environment variables.
+API Gateway provides the public HTTPS endpoint for the Lambda backend.
 
-For AWS-hosted backend environments, an IAM execution role should be preferred instead of long-lived AWS access keys.
+A proxy route forwards application paths to the FastAPI Lambda function.
 
-The Amazon S3 bucket is private and public access is blocked.
+Production API base URL:
 
----
+```text
+https://ve1mksac44.execute-api.ap-south-1.amazonaws.com/default
+```
 
-## AWS S3 Permissions
+### Amazon S3
 
-The application follows a least-privilege approach.
+Amazon S3 stores the raw historical weather JSON.
 
-The backend only requires the following S3 permissions:
+The bucket is private and public access is blocked.
+
+The frontend never accesses S3 directly.
+
+### AWS IAM
+
+The Lambda function uses an IAM execution role instead of long-lived production AWS credentials.
+
+The storage policy follows a least-privilege approach.
+
+Required permissions:
 
 ```text
 s3:ListBucket
@@ -515,60 +645,136 @@ These permissions are limited to the Weather Explorer S3 bucket.
 
 ---
 
-## Design Decisions
+## CORS
+
+The production frontend and backend are hosted on different origins.
+
+Frontend:
+
+```text
+https://inrisk-weather-explorer-gules.vercel.app
+```
+
+Backend:
+
+```text
+https://ve1mksac44.execute-api.ap-south-1.amazonaws.com
+```
+
+API Gateway CORS is configured for:
+
+```text
+Allowed origins:
+https://inrisk-weather-explorer-gules.vercel.app
+http://localhost:5173
+
+Allowed methods:
+GET
+POST
+OPTIONS
+
+Allowed headers:
+content-type
+```
+
+This allows both the deployed Vercel frontend and the local development frontend to communicate with the API.
+
+---
+
+## Security
+
+Environment files and generated deployment artifacts are excluded from Git.
+
+Examples:
+
+```text
+backend/.env
+frontend/.env
+backend/venv/
+frontend/node_modules/
+frontend/dist/
+backend/lambda_package/
+backend/lambda_deployment.zip
+```
+
+AWS credentials must never be committed to the repository.
+
+For local development, AWS credentials can be supplied through environment variables.
+
+In production, the Lambda function uses an IAM execution role with temporary AWS credentials.
+
+The Amazon S3 bucket remains private.
+
+---
+
+## Key Design Decisions
 
 ### Raw JSON Storage
 
-The original Open-Meteo response is stored directly in Amazon S3.
+The original Open-Meteo response is stored directly in Amazon S3 instead of converting it into another storage format.
 
-This preserves the original upstream response and avoids modifying the persisted dataset.
+This preserves the upstream response and keeps the storage layer simple.
 
 ### Stored Data for Visualization
 
-The frontend charts and tables use stored weather JSON rather than repeatedly calling Open-Meteo.
+Charts and tables are rendered from stored S3 datasets instead of repeatedly requesting the same historical data from Open-Meteo.
 
-This clearly separates data collection from data visualization.
+This separates data collection from visualization.
+
+### Serverless Backend
+
+FastAPI is deployed using AWS Lambda and API Gateway rather than maintaining a continuously running server.
+
+This reduces infrastructure management for the current workload.
 
 ### Client-Side File Cache
 
-Previously opened weather files are cached in memory using a `Map`.
+Previously opened files are cached using a JavaScript `Map`.
 
-This avoids unnecessary repeated requests when a user selects the same file multiple times.
+This avoids unnecessary repeated backend requests.
 
 ### S3 Pagination
 
-The backend uses the Amazon S3 paginator when listing stored objects.
+The backend uses the S3 paginator for object listing rather than assuming all stored files will fit into one response.
 
-This allows the application to continue working correctly even when the number of stored files grows beyond a single S3 response.
+### Unique Object Names
 
-### Unique File Names
-
-A UTC timestamp is included in every generated object name.
-
-This prevents files with the same coordinates and date range from overwriting each other.
+UTC timestamps make each S3 object name unique.
 
 ### Backend Validation
 
-Validation is implemented on the backend in addition to frontend validation.
+Backend validation protects the application even when frontend validation is bypassed.
 
-This prevents invalid requests from being accepted when the frontend is bypassed.
+### Least-Privilege IAM
+
+The Lambda execution role only receives the S3 actions required by the application.
 
 ---
 
 ## Deployment
 
-Production deployment URLs will be added after deployment.
+The application is fully deployed.
 
 ### Frontend
 
+Hosted on Vercel:
+
 ```text
-Coming soon
+https://inrisk-weather-explorer-gules.vercel.app
 ```
 
 ### Backend API
 
+FastAPI deployed on AWS Lambda behind Amazon API Gateway:
+
 ```text
-Coming soon
+https://ve1mksac44.execute-api.ap-south-1.amazonaws.com/default
+```
+
+### GitHub Repository
+
+```text
+https://github.com/Soumyadip-crypto/inrisk-weather-explorer
 ```
 
 ---
@@ -578,15 +784,21 @@ Coming soon
 Possible future enhancements include:
 
 - Search and filtering for stored weather files
+- Server-side pagination for very large file collections
 - Delete stored datasets
 - Additional weather metrics
-- Chart date-range zooming
+- Chart zooming and richer visualizations
+- Authentication
+- User-specific datasets
+- CloudWatch alarms and structured monitoring
 - Automated CI/CD
+- Infrastructure as Code using AWS SAM or Terraform
 - Automated cloud integration tests
-- Authentication and user-specific datasets
 
 ---
 
 ## Author
 
-Soumyadip Parui
+**Soumyadip Parui**
+
+GitHub: https://github.com/Soumyadip-crypto
